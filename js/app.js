@@ -295,7 +295,9 @@
   function refreshFonts() {
     const token = ++fontToken;
     ensureUsedFonts().then(() => {
-      if (token === fontToken) fitPreview();
+      if (token !== fontToken) return;
+      renderPages();
+      fitPreview();
     });
   }
 
@@ -552,8 +554,8 @@
     paintRuled(labelNode, rule ? ruleSpan((style && style.labelSize) || state.labelSize, rule) * rule : 0, rule);
     paintRuled(valueNode, rule ? ruleSpan((style && style.valueSize) || state.valueSize, rule) * rule : 0, rule);
   }
-  function applyNotebookLines() {
-    const card = $("#card");
+  function applyNotebookLines(card) {
+    if (!card) return;
     const notebook = state.theme === "notebook";
     const rule = notebook ? notebookRule() : 0;
     if (!notebook) {
@@ -623,8 +625,8 @@
     if (value) node.style.setProperty(name, value);
     else node.style.removeProperty(name);
   }
-  function applyAppearance() {
-    const card = $("#card");
+  function applyAppearance(card) {
+    if (!card) return;
     const theme = themeById(state.theme);
     const labelFont = fontById(state.labelFont) || fontById("zen-kaku");
     const valueFont = fontById(state.valueFont) || fontById("zen-maru");
@@ -654,15 +656,32 @@
     applyPhotoVars(card);
   }
 
-  function buildCardShell() {
-    const card = $("#card");
-    const fallback = el("div", { class: "photo-fallback" });
-    fallback.innerHTML = PHOTO_SVG;
-    card.replaceChildren(
-      el("div", { class: "deco deco-a", "aria-hidden": "true" }),
-      el("div", { class: "deco deco-b", "aria-hidden": "true" }),
-      el("header", { class: "card-head" }, [
-        el("div", { class: "photo-frame", id: "cardPhoto" }, [
+  function pageOverflows(card) {
+    const body = card.querySelector(".card-body");
+    const limit = card.clientHeight - 22;
+    if (body && body.offsetTop + body.offsetHeight > limit) return true;
+    return card.scrollHeight > card.clientHeight + 1;
+  }
+  function makeFieldNode(item) {
+    const field = item.field;
+    const value = el("p", { class: "field-value", text: item.text });
+    if (!String(item.text || "").trim()) value.classList.add("is-blank");
+    const node = el("div", { class: "field", "data-field-id": field.id, "data-wide": field.wide ? "true" : "false" }, [
+      el("p", { class: "field-label", text: (field.label || "無題") + (item.continued ? "（続き）" : "") }),
+      value,
+    ]);
+    applyFieldStyle(node, field);
+    return node;
+  }
+  function makeCard(continued) {
+    const card = el("article", { class: "card" });
+    card.setAttribute("aria-label", continued ? "自己紹介カードの続き" : "自己紹介カードのプレビュー");
+    const head = [];
+    if (!continued) {
+      const fallback = el("div", { class: "photo-fallback" });
+      fallback.innerHTML = PHOTO_SVG;
+      head.push(
+        el("div", { class: "photo-frame" }, [
           el("img", { class: "photo-img", alt: "プロフィール写真", draggable: "false" }),
           fallback,
         ]),
@@ -676,49 +695,34 @@
           el("p", { class: "card-role js-value is-hidden", "data-slot": "role" }),
           el("p", { class: "card-org js-value is-hidden", "data-slot": "org" }),
           el("p", { class: "card-catch js-value is-hidden", "data-slot": "catch" }),
-        ]),
-      ]),
-      el("div", { class: "card-body", id: "cardBody" })
+        ])
+      );
+    } else {
+      head.push(el("p", { class: "continue-name", text: state.name.trim() || "自己紹介" }));
+    }
+    card.append(
+      el("div", { class: "deco deco-a", "aria-hidden": "true" }),
+      el("div", { class: "deco deco-b", "aria-hidden": "true" }),
+      el("header", { class: continued ? "card-head card-continue" : "card-head" }, head),
+      el("div", { class: "card-body" }),
+      el("p", { class: "page-no", "aria-hidden": "true" })
     );
+    return card;
   }
-  function buildCardBody() {
-    const hint = el("p", { class: "card-empty-hint", "data-export-hide": "true", text: "追加した欄が、ここに並びます" });
-    const groups = clusteredBody().map((group) => {
-      const fields = group.fields.map((field) => {
-        const value = el("p", { class: "field-value js-value", text: field.value });
-        if (!field.value.trim()) value.classList.add("is-blank");
-        const node = el("div", { class: "field", "data-field-id": field.id, "data-wide": field.wide ? "true" : "false" }, [
-          el("p", { class: "field-label", text: field.label || "無題" }),
-          value,
-        ]);
-        applyFieldStyle(node, field);
-        return node;
-      });
-      const kids = [];
-      if (state.groupByCategory && group.category) kids.push(el("p", { class: "group-title", text: categoryById(group.category).name }));
-      kids.push(el("div", { class: "group-fields" }, fields));
-      return el("section", { class: "group" }, kids);
-    });
-    $("#cardBody").replaceChildren(hint, ...groups);
-  }
-  function syncCard() {
-    const img = $("#card .photo-img");
-    const frame = $("#card .photo-frame");
+  function fillHeader(card) {
+    const img = card.querySelector(".photo-img");
+    const frame = card.querySelector(".photo-frame");
     if (state.photo) {
-      if (img.getAttribute("src") !== state.photo) img.src = state.photo;
+      img.src = state.photo;
       frame.classList.add("has-photo");
       img.alt = state.name.trim() ? state.name.trim() + "の写真" : "プロフィール写真";
-    } else {
-      img.removeAttribute("src");
-      frame.classList.remove("has-photo");
     }
     const named = !!state.name.trim();
-    const nameEl = $("#card .card-name");
+    const nameEl = card.querySelector(".card-name");
     nameEl.classList.toggle("is-empty", !named);
     nameEl.querySelector(".name-text").textContent = named ? state.name.trim() : "";
-
     SLOT_ORDER.forEach((slot) => {
-      const node = $('#card [data-slot="' + slot + '"]');
+      const node = card.querySelector('[data-slot="' + slot + '"]');
       const field = state.fields.find((item) => item.slot === slot) || null;
       const show = !!(field && fieldVisible(field));
       node.classList.toggle("is-hidden", !show);
@@ -728,19 +732,125 @@
       node.textContent = show ? field.value : "";
       applyFieldStyle(node, show ? field : null);
     });
-
-    const count = clusteredBody().reduce((sum, group) => sum + group.fields.length, 0);
-    const hint = $("#card .card-empty-hint");
-    if (hint) hint.classList.toggle("is-hidden", count > 0);
-    $$("#card .field").forEach((node) => {
-      const field = getField(node.dataset.fieldId);
-      if (!field) return;
-      node.dataset.wide = field.wide ? "true" : "false";
-      node.querySelector(".field-label").textContent = field.label || "無題";
-      const value = node.querySelector(".field-value");
-      value.textContent = field.value.trim() ? field.value : "";
-      value.classList.toggle("is-blank", !field.value.trim());
-      applyFieldStyle(node, field);
+  }
+  function splitToFit(node, card, full) {
+    const valueEl = node.querySelector(".field-value");
+    if (!valueEl || full.length <= 1) return "";
+    let lo = 0;
+    let hi = full.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      valueEl.textContent = full.slice(0, mid);
+      if (pageOverflows(card)) hi = mid - 1;
+      else lo = mid;
+    }
+    if (lo <= 0) {
+      valueEl.textContent = full.slice(0, 1);
+      return full.slice(1);
+    }
+    let kept = full.slice(0, lo).replace(/\s+$/, "");
+    const nl = kept.lastIndexOf("\n");
+    if (nl >= Math.floor(kept.length * 0.45)) kept = kept.slice(0, nl).replace(/\s+$/, "");
+    if (!kept) kept = full.slice(0, 1);
+    valueEl.textContent = kept;
+    if (pageOverflows(card)) {
+      kept = full.slice(0, lo).replace(/\s+$/, "");
+      valueEl.textContent = kept;
+    }
+    return full.slice(kept.length).replace(/^\s+/, "");
+  }
+  function renderPages() {
+    const stage = $("#stage");
+    if (!stage) return;
+    const queue = [];
+    clusteredBody().forEach((group) => {
+      const groupName = state.groupByCategory && group.category ? categoryById(group.category).name : "";
+      group.fields.forEach((field, index) => {
+        queue.push({
+          field: field,
+          groupName: groupName,
+          showTitle: index === 0 && !!groupName,
+          text: field.value,
+          continued: false,
+        });
+      });
+    });
+    stage.replaceChildren();
+    const cards = [];
+    let card = null;
+    let body = null;
+    let group = null;
+    function startPage(continued) {
+      card = makeCard(continued);
+      applyAppearance(card);
+      applyNotebookLines(card);
+      stage.appendChild(card);
+      cards.push(card);
+      body = card.querySelector(".card-body");
+      group = null;
+      if (!continued) fillHeader(card);
+    }
+    function appendItem(item) {
+      if (!group || group.dataset.cat !== item.groupName) {
+        group = el("section", { class: "group" });
+        group.dataset.cat = item.groupName;
+        if (item.showTitle && item.groupName) {
+          const title = el("p", { class: "group-title", text: item.groupName });
+          group.appendChild(title);
+          if (state.theme === "notebook") paintRuled(title, notebookRule(), notebookRule());
+        }
+        group.appendChild(el("div", { class: "group-fields" }));
+        body.appendChild(group);
+      }
+      const node = makeFieldNode(item);
+      group.querySelector(".group-fields").appendChild(node);
+      return node;
+    }
+    function removeItem(node) {
+      const wrap = node.parentElement;
+      const section = wrap.parentElement;
+      node.remove();
+      if (!wrap.children.length) {
+        section.remove();
+        if (group === section) group = null;
+      }
+    }
+    startPage(false);
+    if (!queue.length) {
+      body.appendChild(el("p", { class: "card-empty-hint", "data-export-hide": "true", text: "追加した欄が、ここに並びます" }));
+    }
+    let guard = 0;
+    while (queue.length && guard < 400) {
+      guard += 1;
+      const item = queue[0];
+      const node = appendItem(item);
+      if (!pageOverflows(card)) {
+        queue.shift();
+        continue;
+      }
+      removeItem(node);
+      if (card.querySelector(".field") || !card.querySelector(".card-continue")) {
+        item.showTitle = !!item.groupName;
+        startPage(true);
+        continue;
+      }
+      const placed = appendItem(item);
+      const rest = splitToFit(placed, card, item.text);
+      queue.shift();
+      if (rest) {
+        queue.unshift({
+          field: item.field,
+          groupName: item.groupName,
+          showTitle: !!item.groupName,
+          text: rest,
+          continued: true,
+        });
+      }
+    }
+    cards.forEach((page, index) => {
+      const mark = page.querySelector(".page-no");
+      if (cards.length < 2) mark.remove();
+      else mark.textContent = (index + 1) + " / " + cards.length;
     });
     syncPhotoEditor();
   }
@@ -764,30 +874,23 @@
     syncPhotoControls();
   }
   function updateCard(options) {
-    const key = structureKey();
-    if (key !== cardKey) {
-      cardKey = key;
-      buildCardBody();
-    }
-    syncCard();
-    applyAppearance();
-    applyNotebookLines();
+    renderPages();
     if (options && options.fonts) refreshFonts();
-    requestAnimationFrame(fitPreview);
+    else requestAnimationFrame(fitPreview);
   }
   function fitPreview() {
     const pane = $("#previewPane");
     const scaler = $("#scaler");
     const stage = $("#stage");
-    const card = $("#card");
-    if (!pane || !card.offsetWidth) return;
-    const scale = Math.min(1, Math.max(260, pane.clientWidth - 28) / card.offsetWidth);
+    if (!pane || !stage || !stage.offsetWidth) return;
+    const scale = Math.min(1, Math.max(260, pane.clientWidth - 28) / stage.offsetWidth);
     stage.style.transform = "scale(" + scale + ")";
-    scaler.style.width = Math.ceil(card.offsetWidth * scale) + "px";
-    scaler.style.height = Math.ceil(card.offsetHeight * scale) + "px";
-    $("#scaleNote").textContent = scale < 0.985
-      ? "画面に合わせて " + Math.round(scale * 100) + "% で表示中。ダウンロードする画像は原寸の2倍です。"
-      : "ダウンロードする画像は、幅1280pxのPNGです。";
+    scaler.style.width = Math.ceil(stage.offsetWidth * scale) + "px";
+    scaler.style.height = Math.ceil(stage.offsetHeight * scale) + "px";
+    const pages = $$("#stage .card").length;
+    const fit = scale < 0.985 ? "画面に合わせて " + Math.round(scale * 100) + "% で表示中。" : "";
+    const count = pages > 1 ? pages + "枚に分かれます。" : "1枚に収まります。";
+    $("#scaleNote").textContent = fit + count + "書き出しは16:9（1920×1080）です。";
   }
 
   function fontButtonLabel(id, kind) {
@@ -1265,23 +1368,14 @@
     g.drawImage(img, x * (tw - dw), y * (th - dh), dw, dh);
     return canvas.toDataURL("image/png");
   }
-  function pickScale(node) {
-    let scale = 2;
-    const height = node.offsetHeight || 1;
-    const width = node.offsetWidth || 1;
-    if (height * scale > 16000) scale = Math.max(1, 16000 / height);
-    if (width * scale > 16000) scale = Math.min(scale, 16000 / width);
-    return scale;
-  }
-  async function drawCard() {
+  async function drawPage(live) {
     if (typeof html2canvas !== "function") throw new Error("書き出し用のファイルを読み込めませんでした");
-    await ensureUsedFonts();
-    const live = $("#card");
     const liveImg = live.querySelector(".photo-img");
     const holder = document.createElement("div");
-    holder.style.cssText = "position:fixed;left:0;top:0;padding:16px;background:transparent;z-index:-1;pointer-events:none;";
+    holder.style.cssText = "position:fixed;left:0;top:0;z-index:-1;pointer-events:none;";
     const clone = live.cloneNode(true);
-    clone.removeAttribute("id");
+    clone.style.boxShadow = "none";
+    clone.style.margin = "0";
     clone.querySelectorAll("[data-export-hide]").forEach((node) => node.remove());
     holder.appendChild(clone);
     document.body.appendChild(holder);
@@ -1298,27 +1392,117 @@
         }
       }
       await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-      return await html2canvas(holder, {
+      const canvas = await html2canvas(clone, {
         backgroundColor: null,
-        scale: pickScale(clone),
+        scale: 2,
+        width: 960,
+        height: 540,
         useCORS: true,
         logging: false,
       });
+      if (canvas.width === 1920 && canvas.height === 1080) return canvas;
+      const slide = document.createElement("canvas");
+      slide.width = 1920;
+      slide.height = 1080;
+      slide.getContext("2d").drawImage(canvas, 0, 0, 1920, 1080);
+      return slide;
     } finally {
       holder.remove();
     }
   }
+  async function drawPages() {
+    if (typeof html2canvas !== "function") throw new Error("書き出し用のファイルを読み込めませんでした");
+    await ensureUsedFonts();
+    renderPages();
+    const cards = $$("#stage .card");
+    if (!cards.length) throw new Error("画像にできませんでした");
+    const canvases = [];
+    for (let i = 0; i < cards.length; i++) canvases.push(await drawPage(cards[i]));
+    return canvases;
+  }
   function canvasBlob(canvas) {
     return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   }
-  async function downloadCanvas(canvas) {
-    const blob = await canvasBlob(canvas);
+  function saveBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = fileBase() + ".png";
+    link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  async function downloadCanvas(canvas) {
+    saveBlob(await canvasBlob(canvas), fileBase() + ".png");
+  }
+  function crc32(data) {
+    let c = 0xffffffff;
+    for (let i = 0; i < data.length; i++) {
+      c ^= data[i];
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function le(value, size) {
+    const out = new Uint8Array(size);
+    let n = value >>> 0;
+    for (let i = 0; i < size; i++) {
+      out[i] = n & 0xff;
+      n = Math.floor(n / 256);
+    }
+    return out;
+  }
+  function bytesConcat(parts) {
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    parts.forEach((part) => {
+      out.set(part, offset);
+      offset += part.length;
+    });
+    return out;
+  }
+  function zipStore(files) {
+    const encoder = new TextEncoder();
+    const locals = [];
+    const centrals = [];
+    let offset = 0;
+    files.forEach((file) => {
+      const name = encoder.encode(file.name);
+      const crc = crc32(file.data);
+      const local = bytesConcat([
+        le(0x04034b50, 4), le(20, 2), le(0x800, 2), le(0, 2), le(0, 2), le(0, 2),
+        le(crc, 4), le(file.data.length, 4), le(file.data.length, 4),
+        le(name.length, 2), le(0, 2), name, file.data,
+      ]);
+      locals.push(local);
+      centrals.push(bytesConcat([
+        le(0x02014b50, 4), le(20, 2), le(20, 2), le(0x800, 2), le(0, 2), le(0, 2), le(0, 2),
+        le(crc, 4), le(file.data.length, 4), le(file.data.length, 4),
+        le(name.length, 2), le(0, 2), le(0, 2), le(0, 2), le(0, 2), le(0, 4),
+        le(offset, 4), name,
+      ]));
+      offset += local.length;
+    });
+    const central = bytesConcat(centrals);
+    const end = bytesConcat([
+      le(0x06054b50, 4), le(0, 2), le(0, 2), le(files.length, 2), le(files.length, 2),
+      le(central.length, 4), le(offset, 4), le(0, 2),
+    ]);
+    return new Blob([bytesConcat(locals), central, end], { type: "application/zip" });
+  }
+  async function downloadCanvases(canvases) {
+    if (canvases.length === 1) {
+      await downloadCanvas(canvases[0]);
+      return;
+    }
+    const base = fileBase();
+    const files = [];
+    for (let i = 0; i < canvases.length; i++) {
+      const blob = await canvasBlob(canvases[i]);
+      const data = new Uint8Array(await blob.arrayBuffer());
+      files.push({ name: base + "_" + String(i + 1).padStart(2, "0") + ".png", data: data });
+    }
+    saveBlob(zipStore(files), base + ".zip");
   }
   async function copyCanvas(canvas) {
     if (!navigator.clipboard || !window.ClipboardItem) {
@@ -1334,22 +1518,24 @@
     $("#downloadBtn").textContent = "書き出しています…";
     $("#downloadBtnTop").textContent = "書き出しています…";
     try {
-      const canvas = await drawCard();
-      if (!canvas.width || !canvas.height) throw new Error("画像にできませんでした");
+      const canvases = await drawPages();
+      const size = canvases[0].width + "×" + canvases[0].height;
       if (mode === "copy") {
-        await copyCanvas(canvas);
-        toast("画像をコピーしました");
+        await copyCanvas(canvases[0]);
+        toast(canvases.length > 1 ? "1枚目をコピーしました。全部はダウンロードに入っています" : "画像をコピーしました");
       } else {
-        await downloadCanvas(canvas);
-        toast("保存しました（" + canvas.width + "×" + canvas.height + "）");
+        await downloadCanvases(canvases);
+        toast(canvases.length > 1
+          ? canvases.length + "枚を保存しました（" + size + "）"
+          : "保存しました（" + size + "）");
       }
     } catch (err) {
       toast(err && err.message ? err.message : "画像にできませんでした");
     } finally {
       exporting = false;
       ["#downloadBtn", "#downloadBtnTop", "#copyBtn"].forEach((sel) => { $(sel).disabled = false; });
-      $("#downloadBtn").textContent = "PNGをダウンロード";
-      $("#downloadBtnTop").textContent = "PNGをダウンロード";
+      $("#downloadBtn").textContent = "画像をダウンロード";
+      $("#downloadBtnTop").textContent = "画像をダウンロード";
     }
   }
 
@@ -1447,17 +1633,21 @@
     reader.readAsText(file);
   }
 
-  function bindPhotoPan(frame) {
-    if (!frame) return;
-    frame.addEventListener("dragstart", (event) => event.preventDefault());
-    frame.addEventListener("pointerdown", (event) => {
-      if (!state.photo || event.button !== 0) return;
+  function bindPhotoPan(root) {
+    if (!root) return;
+    root.addEventListener("dragstart", (event) => {
+      if (event.target.closest(".photo-frame, .photo-editor-frame")) event.preventDefault();
+    });
+    root.addEventListener("pointerdown", (event) => {
+      const frame = event.target.closest(".photo-frame, .photo-editor-frame");
+      if (!frame || !root.contains(frame) || !state.photo || event.button !== 0) return;
       photoPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, frame: frame };
       frame.classList.add("is-panning");
-      frame.setPointerCapture(event.pointerId);
+      try { frame.setPointerCapture(event.pointerId); } catch (err) { /* ポインタを取れない環境ではドラッグだけ続ける */ }
     });
-    frame.addEventListener("pointermove", (event) => {
-      if (!photoPointer || photoPointer.frame !== frame || event.pointerId !== photoPointer.id) return;
+    root.addEventListener("pointermove", (event) => {
+      if (!photoPointer || !root.contains(photoPointer.frame) || event.pointerId !== photoPointer.id) return;
+      const frame = photoPointer.frame;
       const scale = frame.closest("#stage") ? stageScale() : 1;
       const dx = (event.clientX - photoPointer.x) / scale;
       const dy = (event.clientY - photoPointer.y) / scale;
@@ -1466,13 +1656,13 @@
       photoPointer.x = event.clientX;
       photoPointer.y = event.clientY;
       panBy(frame, dx, dy);
-      applyPhotoVars($("#card"));
+      $$("#stage .card").forEach(applyPhotoVars);
       applyPhotoVars($("#photoDrop"));
       syncPhotoControls();
     });
     function endPan(event) {
-      if (!photoPointer || photoPointer.frame !== frame || event.pointerId !== photoPointer.id) return;
-      frame.classList.remove("is-panning");
+      if (!photoPointer || event.pointerId !== photoPointer.id) return;
+      photoPointer.frame.classList.remove("is-panning");
       if (photoPointer.moved) {
         suppressPhotoClick = true;
         setTimeout(() => { suppressPhotoClick = false; }, 0);
@@ -1480,8 +1670,8 @@
       }
       photoPointer = null;
     }
-    frame.addEventListener("pointerup", endPan);
-    frame.addEventListener("pointercancel", endPan);
+    root.addEventListener("pointerup", endPan);
+    root.addEventListener("pointercancel", endPan);
   }
   function bindFontButton(button, kind) {
     button.addEventListener("click", () => {
@@ -1500,7 +1690,7 @@
       if (suppressPhotoClick) return;
       $("#photoInput").click();
     });
-    $("#card").addEventListener("click", (event) => {
+    $("#stage").addEventListener("click", (event) => {
       if (suppressPhotoClick) return;
       if (event.target.closest(".photo-frame")) $("#photoInput").click();
     });
@@ -1508,7 +1698,7 @@
       $("#" + key).addEventListener("input", () => {
         state[key] = Number($("#" + key).value);
         syncPhotoControls();
-        applyPhotoVars($("#card"));
+        $$("#stage .card").forEach(applyPhotoVars);
         applyPhotoVars($("#photoDrop"));
         saveSoon();
       });
@@ -1518,12 +1708,12 @@
       state.photoY = 50;
       state.photoZoom = 100;
       syncPhotoControls();
-      applyPhotoVars($("#card"));
+      $$("#stage .card").forEach(applyPhotoVars);
       applyPhotoVars($("#photoDrop"));
       saveSoon();
     });
     bindPhotoPan($("#photoDrop"));
-    bindPhotoPan($("#card .photo-frame"));
+    bindPhotoPan($("#stage"));
     $("#photoInput").addEventListener("change", () => {
       const file = $("#photoInput").files && $("#photoInput").files[0];
       $("#photoInput").value = "";
@@ -1538,7 +1728,7 @@
       saveSoon();
     });
     bindDrop($("#photoDrop"));
-    bindDrop($("#card"));
+    bindDrop($("#stage"));
 
     $("#themeList").addEventListener("click", (event) => {
       const btn = event.target.closest("[data-theme]");
@@ -1835,7 +2025,6 @@
     renderChips();
     renderSwatches();
     renderFontList();
-    buildCardShell();
     bind();
     syncControls();
     renderTemplates();
@@ -1843,7 +2032,7 @@
     updateCard({ fonts: true });
     updateProgress();
     syncJumpAdd();
-    if (window.ResizeObserver) new ResizeObserver(() => fitPreview()).observe($("#card"));
+    if (window.ResizeObserver) new ResizeObserver(() => fitPreview()).observe($("#stage"));
   }
 
   init();
