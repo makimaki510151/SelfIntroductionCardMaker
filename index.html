@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>自己紹介カードメーカー</title>
+  <meta name="description" content="写真と名前からはじめて、好きな欄を足し、デザインと書体を選んで自己紹介カードの画像を作るツールです。">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div>
+        <p class="kicker">一枚で渡す自己紹介</p>
+        <h1>自己紹介カードメーカー</h1>
+        <p class="lead">写真と名前は、最初からカードにあります。あとは欄を足すだけ。テンプレートを埋めていくと、趣味から連絡の取り方まで、その人の輪郭が一枚に載ります。</p>
+        <p class="save-status" id="saveStatus">入力はこのブラウザに自動保存されます。サーバーには送られません。</p>
+      </div>
+      <div class="top-actions">
+        <button type="button" id="sampleBtn">記入例を読み込む</button>
+        <button type="button" id="downloadBtnTop" class="btn-primary" title="Ctrl+Enterでも書き出せます">PNGをダウンロード</button>
+      </div>
+    </header>
+
+    <div class="view-switch" role="tablist" aria-label="表示の切り替え">
+      <button type="button" data-view="edit" class="is-active">編集</button>
+      <button type="button" data-view="preview">プレビュー</button>
+    </div>
+
+    <main class="studio">
+      <div class="editor-column">
+        <nav class="jumps" aria-label="編集項目">
+          <a href="#sec-profile">写真と名前</a>
+          <a href="#sec-design">デザイン</a>
+          <a href="#sec-type">文字</a>
+          <a href="#sec-add">欄を追加</a>
+          <a href="#sec-fields">入力</a>
+        </nav>
+
+        <section class="panel" id="sec-profile">
+          <h2>写真と名前</h2>
+          <p class="hint">この二つは消せません。どのデザインでも、カードの顔になります。</p>
+          <div class="photo-editor">
+            <div class="photo-editor-frame" id="photoDrop" title="クリックして写真を選ぶ">
+              <img id="photoThumb" alt="" hidden>
+              <span id="photoEmpty">写真を<br>追加</span>
+            </div>
+            <div class="photo-editor-copy">
+              <p>プロフィール写真</p>
+              <div class="inline-actions">
+                <button type="button" id="photoPick">画像を選ぶ</button>
+                <button type="button" id="photoRemove" class="text-btn" hidden>写真を外す</button>
+              </div>
+              <p class="hint">正方形に近い写真が、円でも四角でも収まります。</p>
+            </div>
+          </div>
+          <label class="stack-label" for="nameInput">名前
+            <input id="nameInput" class="name-input" maxlength="60" placeholder="青葉 みのり" autocomplete="name">
+          </label>
+        </section>
+
+        <section class="panel" id="sec-design">
+          <h2>カードのデザイン</h2>
+          <p class="hint">デザインを替えても、書いた内容はそのまま残ります。</p>
+          <div class="theme-grid" id="themeList" role="list"></div>
+          <p class="stack-label">写真の形</p>
+          <div class="choice-row" id="shapeChoices" role="group" aria-label="写真の形">
+            <button type="button" data-shape="auto">デザインどおり</button>
+            <button type="button" data-shape="circle">円</button>
+            <button type="button" data-shape="rounded">角丸</button>
+            <button type="button" data-shape="square">四角</button>
+            <button type="button" data-shape="arch">アーチ</button>
+          </div>
+          <p class="stack-label">欄の並び</p>
+          <div class="choice-row" id="columnChoices" role="group" aria-label="欄の列数">
+            <button type="button" data-columns="auto">自動</button>
+            <button type="button" data-columns="1">1列</button>
+            <button type="button" data-columns="2">2列</button>
+          </div>
+          <label class="check"><input type="checkbox" id="groupToggle" checked>分類ごとに見出しを付ける</label>
+          <p class="hint">オフにすると、追加した順のまま並びます。欄の入れ替えは、入力一覧でできます。</p>
+          <label class="check"><input type="checkbox" id="emptyToggle">未入力の欄もカードに表示する</label>
+        </section>
+
+        <section class="panel" id="sec-type">
+          <h2>文字</h2>
+          <p class="hint">欄の文字と、内容の文字は、書体も色も大きさも別々です。欄ごとに変えるときは、入力一覧の「この欄だけ変える」を開きます。</p>
+
+          <article class="type-card">
+            <h3>欄の文字</h3>
+            <button type="button" id="labelFontBtn" class="font-btn">書体を選ぶ</button>
+            <label class="slider">大きさ <output id="labelSizeOut">12</output>px
+              <input type="range" id="labelSize" min="10" max="24" value="12">
+            </label>
+            <div class="color-row">
+              <input type="color" id="labelColor" aria-label="欄の文字色" value="#8d3d32">
+              <button type="button" class="text-btn js-color-reset" data-color-key="labelColor">テーマどおり</button>
+              <div class="swatches" data-color-key="labelColor"></div>
+            </div>
+          </article>
+
+          <article class="type-card">
+            <h3>内容の文字</h3>
+            <button type="button" id="valueFontBtn" class="font-btn">書体を選ぶ</button>
+            <label class="slider">大きさ <output id="valueSizeOut">16</output>px
+              <input type="range" id="valueSize" min="12" max="32" value="16">
+            </label>
+            <div class="color-row">
+              <input type="color" id="valueColor" aria-label="内容の文字色" value="#2c241e">
+              <button type="button" class="text-btn js-color-reset" data-color-key="valueColor">テーマどおり</button>
+              <div class="swatches" data-color-key="valueColor"></div>
+            </div>
+          </article>
+
+          <article class="type-card">
+            <h3>名前</h3>
+            <p class="hint">書体を内容に合わせておくと、内容の書体を変えたとき名前も一緒に変わります。色を空に戻すと、デザインごとの名前色になります。</p>
+            <button type="button" id="nameFontBtn" class="font-btn">内容の書体に合わせる</button>
+            <label class="slider">大きさ <output id="nameSizeOut">44</output>px
+              <input type="range" id="nameSize" min="26" max="72" value="44">
+            </label>
+            <div class="color-row">
+              <input type="color" id="nameColor" aria-label="名前の文字色" value="#241c17">
+              <button type="button" class="text-btn js-color-reset" data-color-key="nameColor">テーマどおり</button>
+              <div class="swatches" data-color-key="nameColor"></div>
+            </div>
+          </article>
+
+          <article class="type-card">
+            <h3>アクセント</h3>
+            <p class="hint">分類の見出し、写真の縁、デザイン上の差し色に使います。</p>
+            <div class="color-row">
+              <input type="color" id="accentColor" aria-label="アクセント色" value="#c44536">
+              <button type="button" class="text-btn js-color-reset" data-color-key="accentColor">テーマどおり</button>
+              <div class="swatches" data-color-key="accentColor"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel" id="sec-add">
+          <h2>欄を追加</h2>
+          <p class="hint">テンプレートは、基本のことから好きなもの、暮らし、連絡の取り方まで揃っています。全部足して書いても、テンプレートにない欄を自分で作っても大丈夫です。</p>
+          <div class="template-tools">
+            <input id="templateSearch" type="search" placeholder="欄を探す（趣味、MBTI、出身地…）" aria-label="テンプレートを探す">
+          </div>
+          <div class="chips" id="categoryChips" role="tablist" aria-label="テンプレートの分類"></div>
+          <div class="template-list" id="templateList"></div>
+          <button type="button" id="addAllBtn">すべてのテンプレートを追加</button>
+          <form id="customForm" class="custom-form">
+            <input id="customLabel" maxlength="40" placeholder="欄の名前（例：好きなパン）" aria-label="自由な欄の名前">
+            <select id="customKind" aria-label="自由な欄の広さ">
+              <option value="line">短い文</option>
+              <option value="block">長い文（幅いっぱい）</option>
+            </select>
+            <button type="submit">自由な欄を追加</button>
+          </form>
+        </section>
+
+        <section class="panel" id="sec-fields">
+          <div class="fields-head">
+            <h2>カードに入っている欄</h2>
+            <button type="button" id="clearFieldsBtn" class="text-btn">欄をすべて削除</button>
+          </div>
+          <p id="progressText" class="hint"></p>
+          <div class="meter" aria-hidden="true"><span id="meterBar"></span></div>
+          <div id="fieldList"></div>
+          <details class="backup">
+            <summary>バックアップ</summary>
+            <p class="hint">別のパソコンへ移すときや、ブラウザのデータを消す前にファイルへ残せます。</p>
+            <div class="backup-actions">
+              <button type="button" id="exportJsonBtn">データファイルを保存</button>
+              <button type="button" id="importJsonBtn">データファイルを読み込む</button>
+            </div>
+          </details>
+          <button type="button" id="resetBtn" class="btn-danger">最初から作り直す</button>
+        </section>
+      </div>
+
+      <aside class="preview-column">
+        <div class="preview-toolbar">
+          <div>
+            <p class="eyebrow">プレビュー</p>
+            <p class="preview-note">この見た目が、そのまま画像になります。</p>
+          </div>
+          <div class="preview-actions">
+            <button type="button" id="copyBtn">画像をコピー</button>
+            <button type="button" id="downloadBtn" class="btn-primary">PNGをダウンロード</button>
+          </div>
+        </div>
+        <div class="preview-pane" id="previewPane">
+          <div id="scaler">
+            <div id="stage">
+              <article id="card" class="card" aria-label="自己紹介カードのプレビュー"></article>
+            </div>
+          </div>
+        </div>
+        <p class="scale-note" id="scaleNote"></p>
+      </aside>
+    </main>
+
+    <footer class="site-foot">
+      <p>書体の多くは Google Fonts から読み込みます。装飾の強い書体は、珍しい漢字だけ別の書体で補うことがあります。画像の書き出しライブラリは同梱しています。</p>
+    </footer>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <h2 id="modalTitle"></h2>
+      <p id="modalBody"></p>
+      <div class="modal-actions">
+        <button type="button" id="modalCancel">やめる</button>
+        <button type="button" id="modalOk" class="btn-primary">続ける</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <div id="fontPopover" class="font-popover" hidden role="dialog" aria-label="書体を選ぶ">
+    <input id="fontSearch" class="font-search" type="search" placeholder="書体を探す" aria-label="書体を探す">
+    <button type="button" id="fontInherit" class="font-option">全体の設定に合わせる</button>
+    <div id="fontList"></div>
+    <p class="font-note">装飾体は、珍しい漢字だけ別の書体になることがあります。</p>
+  </div>
+
+  <input id="photoInput" type="file" accept="image/*" hidden>
+  <input id="jsonInput" type="file" accept="application/json,.json" hidden>
+  <noscript><p>このメーカーは JavaScript で動きます。ブラウザの設定で有効にしてください。</p></noscript>
+  <script src="vendor/html2canvas.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
