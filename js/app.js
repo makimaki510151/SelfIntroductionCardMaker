@@ -60,6 +60,8 @@
   let modalResolver = null;
   let exporting = false;
   let dragId = "";
+  let photoPointer = null;
+  let suppressPhotoClick = false;
   let picker = { button: null, kind: "", fieldId: "" };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -113,6 +115,9 @@
     return {
       version: 1,
       photo: "",
+      photoX: 50,
+      photoY: 50,
+      photoZoom: 100,
       name: "",
       theme: "washi",
       photoShape: "auto",
@@ -168,6 +173,9 @@
     const shapes = ["auto", "circle", "rounded", "square", "arch", "bleed"];
     const next = defaultState();
     next.photo = typeof source.photo === "string" && source.photo.indexOf("data:image") === 0 ? source.photo : "";
+    next.photoX = clamp(source.photoX, 0, 100, 50);
+    next.photoY = clamp(source.photoY, 0, 100, 50);
+    next.photoZoom = clamp(source.photoZoom, 100, 300, 100);
     next.name = String(source.name || "").slice(0, 60);
     next.theme = THEMES.some((theme) => theme.id === source.theme) ? source.theme : base.theme;
     next.photoShape = shapes.indexOf(source.photoShape) >= 0 ? source.photoShape : "auto";
@@ -401,6 +409,10 @@
   async function setPhotoFile(file) {
     try {
       state.photo = await readImage(file);
+      state.photoX = 50;
+      state.photoY = 50;
+      state.photoZoom = 100;
+      syncControls();
       updateCard();
       saveSoon();
     } catch (err) {
@@ -477,7 +489,10 @@
 
   function applyFieldStyle(node, field) {
     FIELD_VARS.forEach((name) => node.style.removeProperty(name));
-    if (!field || !field.style) return;
+    if (!field || !field.style) {
+      paintFieldRules(node, null);
+      return;
+    }
     const style = field.style;
     if (style.labelFont) {
       const font = fontById(style.labelFont);
@@ -497,6 +512,112 @@
     if (style.valueColor) node.style.setProperty("--f-value-color", style.valueColor);
     if (style.labelSize) node.style.setProperty("--f-label-size", style.labelSize + "px");
     if (style.valueSize) node.style.setProperty("--f-value-size", style.valueSize + "px");
+    paintFieldRules(node, style);
+  }
+  function notebookRule() {
+    const size = Math.max(state.valueSize, state.labelSize);
+    return Math.max(28, Math.ceil((size + 12) / 2) * 2);
+  }
+  function ruleSpan(size, rule) {
+    const need = Math.ceil(size * 1.15 + 8);
+    return Math.max(1, Math.ceil(need / rule));
+  }
+  function ruledImage(line) {
+    return "repeating-linear-gradient(to bottom, #fffef8 0, #fffef8 " + (line - 1) + "px, rgba(90,140,180,0.62) " + (line - 1) + "px, rgba(90,140,180,0.62) " + line + "px)";
+  }
+  function clearRuled(node) {
+    node.style.lineHeight = "";
+    node.style.backgroundColor = "";
+    node.style.backgroundImage = "";
+  }
+  function paintRuled(node, line, rule) {
+    if (!node) return;
+    if (!rule) {
+      clearRuled(node);
+      return;
+    }
+    node.style.lineHeight = line + "px";
+    if (line > rule) {
+      node.style.backgroundColor = "#fffef8";
+      node.style.backgroundImage = ruledImage(line);
+    } else {
+      node.style.backgroundColor = "";
+      node.style.backgroundImage = "";
+    }
+  }
+  function paintFieldRules(node, style) {
+    const rule = state.theme === "notebook" ? notebookRule() : 0;
+    const labelNode = node.querySelector(".field-label");
+    const valueNode = node.querySelector(".field-value") || (node.classList.contains("js-value") ? node : null);
+    paintRuled(labelNode, rule ? ruleSpan((style && style.labelSize) || state.labelSize, rule) * rule : 0, rule);
+    paintRuled(valueNode, rule ? ruleSpan((style && style.valueSize) || state.valueSize, rule) * rule : 0, rule);
+  }
+  function applyNotebookLines() {
+    const card = $("#card");
+    const notebook = state.theme === "notebook";
+    const rule = notebook ? notebookRule() : 0;
+    if (!notebook) {
+      card.style.removeProperty("--rule");
+      card.style.removeProperty("--name-lh");
+      card.style.backgroundImage = "";
+      const nameEl = card.querySelector(".card-name");
+      if (nameEl) clearRuled(nameEl);
+      card.querySelectorAll(".group-title, .card-empty-hint").forEach((node) => clearRuled(node));
+      return;
+    }
+    card.style.setProperty("--rule", rule + "px");
+    const nameLh = ruleSpan(state.nameSize, rule) * rule;
+    card.style.setProperty("--name-lh", nameLh + "px");
+    card.style.backgroundImage = "repeating-linear-gradient(to bottom, rgba(255,254,248,0) 0, rgba(255,254,248,0) " + (rule - 1) + "px, rgba(90,140,180,0.62) " + (rule - 1) + "px, rgba(90,140,180,0.62) " + rule + "px)";
+    paintRuled(card.querySelector(".card-name"), nameLh, rule);
+    card.querySelectorAll(".group-title, .card-empty-hint").forEach((node) => paintRuled(node, rule, rule));
+  }
+  function applyPhotoVars(node) {
+    if (!node) return;
+    node.style.setProperty("--photo-x", state.photoX + "%");
+    node.style.setProperty("--photo-y", state.photoY + "%");
+    node.style.setProperty("--photo-zoom", String(state.photoZoom / 100));
+  }
+  function axisLabel(value, low, high) {
+    if (value <= 5) return low;
+    if (value >= 95) return high;
+    if (value >= 45 && value <= 55) return "中央";
+    return value + "%";
+  }
+  function syncPhotoControls() {
+    const box = $("#photoAdjust");
+    if (!box) return;
+    box.hidden = !state.photo;
+    $("#photoX").value = state.photoX;
+    $("#photoY").value = state.photoY;
+    $("#photoZoom").value = state.photoZoom;
+    $("#photoXOut").textContent = axisLabel(state.photoX, "左", "右");
+    $("#photoYOut").textContent = axisLabel(state.photoY, "上", "下");
+    $("#photoZoomOut").textContent = state.photoZoom;
+  }
+  function stageScale() {
+    const match = /scale\(([\d.]+)\)/.exec($("#stage").style.transform || "");
+    return match ? Number(match[1]) || 1 : 1;
+  }
+  function panBy(frame, dx, dy) {
+    const img = frame.querySelector("img");
+    if (!img || !img.naturalWidth || !frame.clientWidth || !frame.clientHeight) return;
+    const zoom = state.photoZoom / 100;
+    const fw = frame.clientWidth;
+    const fh = frame.clientHeight;
+    const cover = Math.max(fw / img.naturalWidth, fh / img.naturalHeight);
+    const dw = img.naturalWidth * cover * zoom;
+    const dh = img.naturalHeight * cover * zoom;
+    if (dw > fw + 0.5) {
+      const span = fw - dw;
+      const next = Math.min(0, Math.max(span, (state.photoX / 100) * span + dx));
+      state.photoX = Math.round((next / span) * 100);
+    }
+    if (dh > fh + 0.5) {
+      const span = fh - dh;
+      const next = Math.min(0, Math.max(span, (state.photoY / 100) * span + dy));
+      state.photoY = Math.round((next / span) * 100);
+    }
   }
   function setOrClear(node, name, value) {
     if (value) node.style.setProperty(name, value);
@@ -530,6 +651,7 @@
     setOrClear(card, "--value-color", state.valueColor);
     setOrClear(card, "--name-color", state.nameColor);
     setOrClear(card, "--accent", state.accentColor);
+    applyPhotoVars(card);
   }
 
   function buildCardShell() {
@@ -541,7 +663,7 @@
       el("div", { class: "deco deco-b", "aria-hidden": "true" }),
       el("header", { class: "card-head" }, [
         el("div", { class: "photo-frame", id: "cardPhoto" }, [
-          el("img", { class: "photo-img", alt: "プロフィール写真" }),
+          el("img", { class: "photo-img", alt: "プロフィール写真", draggable: "false" }),
           fallback,
         ]),
         el("div", { class: "name-block" }, [
@@ -637,6 +759,9 @@
       empty.hidden = false;
       remove.hidden = true;
     }
+    $("#photoDrop").classList.toggle("has-photo", !!state.photo);
+    applyPhotoVars($("#photoDrop"));
+    syncPhotoControls();
   }
   function updateCard(options) {
     const key = structureKey();
@@ -646,6 +771,7 @@
     }
     syncCard();
     applyAppearance();
+    applyNotebookLines();
     if (options && options.fonts) refreshFonts();
     requestAnimationFrame(fitPreview);
   }
@@ -1109,10 +1235,13 @@
     canvas.width = tw;
     canvas.height = th;
     const g = canvas.getContext("2d");
-    const scale = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
-    const dw = img.naturalWidth * scale;
-    const dh = img.naturalHeight * scale;
-    g.drawImage(img, (tw - dw) / 2, (th - dh) / 2, dw, dh);
+    const zoom = state.photoZoom / 100;
+    const x = state.photoX / 100;
+    const y = state.photoY / 100;
+    const cover = Math.max(tw / img.naturalWidth, th / img.naturalHeight);
+    const dw = img.naturalWidth * cover * zoom;
+    const dh = img.naturalHeight * cover * zoom;
+    g.drawImage(img, x * (tw - dw), y * (th - dh), dw, dh);
     return canvas.toDataURL("image/png");
   }
   function pickScale(node) {
@@ -1141,6 +1270,9 @@
         const img = clone.querySelector(".photo-img");
         if (frame && img && frame.clientWidth && frame.clientHeight) {
           img.src = coverCrop(liveImg, frame.clientWidth * 2, frame.clientHeight * 2);
+          img.style.objectFit = "fill";
+          img.style.objectPosition = "50% 50%";
+          img.style.transform = "none";
           if (img.decode) await img.decode().catch(() => {});
         }
       }
@@ -1210,6 +1342,9 @@
     }
     state.name = "青葉 みのり";
     state.photo = makeSamplePhoto();
+    state.photoX = 50;
+    state.photoY = 50;
+    state.photoZoom = 100;
     state.fields = Object.keys(SAMPLE_FIELDS).map((id) => {
       const field = makeField(templateById(id));
       field.value = SAMPLE_FIELDS[id];
@@ -1291,6 +1426,42 @@
     reader.readAsText(file);
   }
 
+  function bindPhotoPan(frame) {
+    if (!frame) return;
+    frame.addEventListener("dragstart", (event) => event.preventDefault());
+    frame.addEventListener("pointerdown", (event) => {
+      if (!state.photo || event.button !== 0) return;
+      photoPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, frame: frame };
+      frame.classList.add("is-panning");
+      frame.setPointerCapture(event.pointerId);
+    });
+    frame.addEventListener("pointermove", (event) => {
+      if (!photoPointer || photoPointer.frame !== frame || event.pointerId !== photoPointer.id) return;
+      const scale = frame.closest("#stage") ? stageScale() : 1;
+      const dx = (event.clientX - photoPointer.x) / scale;
+      const dy = (event.clientY - photoPointer.y) / scale;
+      if (!photoPointer.moved && Math.hypot(event.clientX - photoPointer.x, event.clientY - photoPointer.y) < 4) return;
+      photoPointer.moved = true;
+      photoPointer.x = event.clientX;
+      photoPointer.y = event.clientY;
+      panBy(frame, dx, dy);
+      applyPhotoVars($("#card"));
+      applyPhotoVars($("#photoDrop"));
+      syncPhotoControls();
+    });
+    function endPan(event) {
+      if (!photoPointer || photoPointer.frame !== frame || event.pointerId !== photoPointer.id) return;
+      frame.classList.remove("is-panning");
+      if (photoPointer.moved) {
+        suppressPhotoClick = true;
+        setTimeout(() => { suppressPhotoClick = false; }, 0);
+        saveSoon();
+      }
+      photoPointer = null;
+    }
+    frame.addEventListener("pointerup", endPan);
+    frame.addEventListener("pointercancel", endPan);
+  }
   function bindFontButton(button, kind) {
     button.addEventListener("click", () => {
       if (!$("#fontPopover").hidden && picker.button === button) closePicker();
@@ -1304,10 +1475,34 @@
       saveSoon();
     });
     $("#photoPick").addEventListener("click", () => $("#photoInput").click());
-    $("#photoDrop").addEventListener("click", () => $("#photoInput").click());
+    $("#photoDrop").addEventListener("click", () => {
+      if (suppressPhotoClick) return;
+      $("#photoInput").click();
+    });
     $("#card").addEventListener("click", (event) => {
+      if (suppressPhotoClick) return;
       if (event.target.closest(".photo-frame")) $("#photoInput").click();
     });
+    ["photoX", "photoY", "photoZoom"].forEach((key) => {
+      $("#" + key).addEventListener("input", () => {
+        state[key] = Number($("#" + key).value);
+        syncPhotoControls();
+        applyPhotoVars($("#card"));
+        applyPhotoVars($("#photoDrop"));
+        saveSoon();
+      });
+    });
+    $("#photoReset").addEventListener("click", () => {
+      state.photoX = 50;
+      state.photoY = 50;
+      state.photoZoom = 100;
+      syncPhotoControls();
+      applyPhotoVars($("#card"));
+      applyPhotoVars($("#photoDrop"));
+      saveSoon();
+    });
+    bindPhotoPan($("#photoDrop"));
+    bindPhotoPan($("#card .photo-frame"));
     $("#photoInput").addEventListener("change", () => {
       const file = $("#photoInput").files && $("#photoInput").files[0];
       $("#photoInput").value = "";
@@ -1315,6 +1510,9 @@
     });
     $("#photoRemove").addEventListener("click", () => {
       state.photo = "";
+      state.photoX = 50;
+      state.photoY = 50;
+      state.photoZoom = 100;
       updateCard();
       saveSoon();
     });

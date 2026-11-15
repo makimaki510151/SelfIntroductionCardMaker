@@ -46,7 +46,7 @@
           <p class="hint">この二つは消せません。どのデザインでも、カードの顔になります。</p>
           <div class="photo-editor">
             <div class="photo-editor-frame" id="photoDrop" title="クリックして写真を選ぶ">
-              <img id="photoThumb" alt="" hidden>
+              <img id="photoThumb" alt="" hidden draggable="false">
               <span id="photoEmpty">写真を<br>追加</span>
             </div>
             <div class="photo-editor-copy">
@@ -55,8 +55,21 @@
                 <button type="button" id="photoPick">画像を選ぶ</button>
                 <button type="button" id="photoRemove" class="text-btn" hidden>写真を外す</button>
               </div>
-              <p class="hint">正方形に近い写真が、円でも四角でも収まります。</p>
+              <p class="hint">クリックで写真を選び、ドラッグで見せる位置を動かせます。</p>
             </div>
+          </div>
+          <div id="photoAdjust" class="photo-adjust" hidden>
+            <label class="slider">横の位置 <output id="photoXOut">中央</output>
+              <input type="range" id="photoX" min="0" max="100" value="50" aria-label="写真の横位置">
+            </label>
+            <label class="slider">縦の位置 <output id="photoYOut">中央</output>
+              <input type="range" id="photoY" min="0" max="100" value="50" aria-label="写真の縦位置">
+            </label>
+            <label class="slider">拡大 <output id="photoZoomOut">100</output>%
+              <input type="range" id="photoZoom" min="100" max="300" value="100" aria-label="写真の拡大率">
+            </label>
+            <button type="button" id="photoReset" class="text-btn">位置と拡大を戻す</button>
+            <p class="hint">拡大すると、動かせる範囲が広がります。写真の上をドラッグしても位置が動きます。</p>
           </div>
           <label class="stack-label" for="nameInput">名前
             <input id="nameInput" class="name-input" maxlength="60" placeholder="青葉 みのり" autocomplete="name">
