@@ -14,7 +14,7 @@
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  padding: 28px 20px 64px;
+  padding: 28px 20px 88px;
   color: var(--ink);
   font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
   font-size: 15px;
@@ -135,6 +135,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   font-size: 12px;
 }
 .jumps a:hover { background: #fff; }
+#sec-add { scroll-margin-top: 12px; }
+.back-to-add { margin-top: 14px; }
+.jump-add {
+  position: fixed;
+  z-index: 30;
+  bottom: 16px;
+  left: 16px;
+  box-shadow: 0 10px 24px rgba(30, 26, 22, 0.28);
+}
+body[data-mobile-view="preview"] .jump-add { display: none !important; }
 
 .panel {
   background: var(--paper);
@@ -957,7 +967,7 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
   .preview-pane { flex: 1; min-height: 0; }
 }
 @media (max-width: 800px) {
-  body { padding: 18px 14px 48px; }
+  body { padding: 18px 14px 84px; }
   .topbar { flex-direction: column; align-items: stretch; }
   .theme-grid, .tpl-grid, .style-grid, .custom-form { grid-template-columns: 1fr; }
   .preview-toolbar { flex-direction: column; align-items: stretch; }

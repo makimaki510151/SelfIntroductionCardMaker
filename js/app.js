@@ -932,6 +932,27 @@
     const badge = row.querySelector(".js-style-badge");
     if (badge) badge.hidden = !hasCustomStyle(field);
   }
+  function jumpToAdd() {
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = "auto";
+    $("#sec-add").scrollIntoView({ block: "start" });
+    root.style.scrollBehavior = previous;
+    $("#templateSearch").focus({ preventScroll: true });
+  }
+  function syncJumpAdd() {
+    const btn = $("#jumpAdd");
+    const narrow = window.matchMedia("(max-width: 1040px)").matches;
+    const previewing = narrow && document.body.dataset.mobileView === "preview";
+    const rect = $("#sec-add").getBoundingClientRect();
+    const addVisible = rect.top < window.innerHeight * 0.4 && rect.bottom > 72;
+    const back = $("#backToAdd").getBoundingClientRect();
+    const backVisible = back.bottom > 0 && back.top < window.innerHeight;
+    btn.hidden = previewing || addVisible || backVisible;
+    if (btn.hidden) return;
+    const column = document.querySelector(".editor-column").getBoundingClientRect();
+    btn.style.left = Math.max(12, column.left) + "px";
+  }
   function focusField(id) {
     const row = document.querySelector('[data-editor-id="' + id + '"]');
     if (!row) return;
@@ -1609,6 +1630,7 @@
       closePicker();
     });
     window.addEventListener("scroll", (event) => {
+      syncJumpAdd();
       const pop = $("#fontPopover");
       if (pop.hidden || pop.contains(event.target)) return;
       closePicker();
@@ -1616,7 +1638,10 @@
     window.addEventListener("resize", () => {
       closePicker();
       fitPreview();
+      syncJumpAdd();
     });
+    $("#jumpAdd").addEventListener("click", jumpToAdd);
+    $("#backToAdd").addEventListener("click", jumpToAdd);
 
     $("#templateSearch").addEventListener("input", renderTemplates);
     $("#categoryChips").addEventListener("click", (event) => {
@@ -1790,6 +1815,7 @@
         document.body.dataset.mobileView = btn.dataset.view;
         $$(".view-switch button").forEach((item) => item.classList.toggle("is-active", item === btn));
         requestAnimationFrame(fitPreview);
+        syncJumpAdd();
       });
     });
     document.addEventListener("keydown", (event) => {
@@ -1816,6 +1842,7 @@
     renderEditor();
     updateCard({ fonts: true });
     updateProgress();
+    syncJumpAdd();
     if (window.ResizeObserver) new ResizeObserver(() => fitPreview()).observe($("#card"));
   }
 
