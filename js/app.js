@@ -890,7 +890,7 @@
     const pages = $$("#stage .card").length;
     const fit = scale < 0.985 ? "画面に合わせて " + Math.round(scale * 100) + "% で表示中。" : "";
     const count = pages > 1 ? pages + "枚に分かれます。" : "1枚に収まります。";
-    $("#scaleNote").textContent = fit + count + "書き出しは16:9（1920×1080）です。";
+    $("#scaleNote").textContent = fit + count + "画像もPDFも16:9（1920×1080）です。";
   }
 
   function fontButtonLabel(id, kind) {
@@ -1423,6 +1423,85 @@
   function canvasBlob(canvas) {
     return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   }
+  function canvasJpeg(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("PDFにできませんでした"));
+      }, "image/jpeg", 0.92);
+    });
+  }
+  function opaqueCanvas(canvas, color) {
+    const out = document.createElement("canvas");
+    out.width = canvas.width;
+    out.height = canvas.height;
+    const g = out.getContext("2d");
+    g.fillStyle = color || "#ffffff";
+    g.fillRect(0, 0, out.width, out.height);
+    g.drawImage(canvas, 0, 0);
+    return out;
+  }
+  function asciiBytes(text) {
+    const out = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i) & 255;
+    return out;
+  }
+  function pdfObject(id, body) {
+    return bytesConcat([asciiBytes(id + " 0 obj\n"), typeof body === "string" ? asciiBytes(body) : body, asciiBytes("\nendobj\n")]);
+  }
+  function pdfFromJpegs(images) {
+    const pageW = 960;
+    const pageH = 540;
+    const objects = new Array(3 + images.length * 3);
+    objects[1] = pdfObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    const kids = [];
+    images.forEach((image, index) => {
+      const pageId = 3 + index * 3;
+      const contentId = pageId + 1;
+      const imageId = pageId + 2;
+      kids.push(pageId + " 0 R");
+      const content = "q\n" + pageW + " 0 0 " + pageH + " 0 0 cm\n/Im0 Do\nQ";
+      objects[contentId] = pdfObject(contentId, "<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream");
+      const dict = "<< /Type /XObject /Subtype /Image /Width " + image.width + " /Height " + image.height
+        + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + image.data.length + " >>\nstream\n";
+      objects[imageId] = bytesConcat([
+        asciiBytes(imageId + " 0 obj\n" + dict),
+        image.data,
+        asciiBytes("\nendstream\nendobj\n"),
+      ]);
+      objects[pageId] = pdfObject(pageId, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH
+        + "] /Contents " + contentId + " 0 R /Resources << /XObject << /Im0 " + imageId + " 0 R >> >> >>");
+    });
+    objects[2] = pdfObject(2, "<< /Type /Pages /Count " + images.length + " /Kids [" + kids.join(" ") + "] >>");
+    const header = asciiBytes("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+    const parts = [header];
+    const offsets = [0];
+    let cursor = header.length;
+    for (let id = 1; id < objects.length; id++) {
+      offsets[id] = cursor;
+      parts.push(objects[id]);
+      cursor += objects[id].length;
+    }
+    let xref = "xref\n0 " + objects.length + "\n0000000000 65535 f \n";
+    for (let id = 1; id < objects.length; id++) xref += String(offsets[id]).padStart(10, "0") + " 00000 n \n";
+    xref += "trailer\n<< /Size " + objects.length + " /Root 1 0 R >>\nstartxref\n" + cursor + "\n%%EOF\n";
+    parts.push(asciiBytes(xref));
+    return new Blob([bytesConcat(parts)], { type: "application/pdf" });
+  }
+  async function downloadPdf(canvases) {
+    const card = $("#stage .card");
+    const color = card ? getComputedStyle(card).backgroundColor : "#ffffff";
+    const images = [];
+    for (let i = 0; i < canvases.length; i++) {
+      const blob = await canvasJpeg(opaqueCanvas(canvases[i], color));
+      images.push({
+        data: new Uint8Array(await blob.arrayBuffer()),
+        width: canvases[i].width,
+        height: canvases[i].height,
+      });
+    }
+    saveBlob(pdfFromJpegs(images), fileBase() + ".pdf");
+  }
   function saveBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1511,18 +1590,37 @@
     const blob = await canvasBlob(canvas);
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
   }
+  const exportButtonIds = ["#downloadBtn", "#downloadBtnTop", "#pdfBtn", "#pdfBtnTop", "#copyBtn"];
+  function setExportBusy(busy, mode) {
+    exportButtonIds.forEach((sel) => { $(sel).disabled = busy; });
+    $("#downloadBtn").textContent = "画像をダウンロード";
+    $("#downloadBtnTop").textContent = "画像をダウンロード";
+    $("#pdfBtn").textContent = "PDFで保存";
+    $("#pdfBtnTop").textContent = "PDFで保存";
+    if (!busy) return;
+    if (mode === "pdf") {
+      $("#pdfBtn").textContent = "書き出しています…";
+      $("#pdfBtnTop").textContent = "書き出しています…";
+    } else if (mode !== "copy") {
+      $("#downloadBtn").textContent = "書き出しています…";
+      $("#downloadBtnTop").textContent = "書き出しています…";
+    }
+  }
   async function exportImage(mode) {
     if (exporting) return;
     exporting = true;
-    ["#downloadBtn", "#downloadBtnTop", "#copyBtn"].forEach((sel) => { $(sel).disabled = true; });
-    $("#downloadBtn").textContent = "書き出しています…";
-    $("#downloadBtnTop").textContent = "書き出しています…";
+    setExportBusy(true, mode);
     try {
       const canvases = await drawPages();
       const size = canvases[0].width + "×" + canvases[0].height;
       if (mode === "copy") {
         await copyCanvas(canvases[0]);
         toast(canvases.length > 1 ? "1枚目をコピーしました。全部はダウンロードに入っています" : "画像をコピーしました");
+      } else if (mode === "pdf") {
+        await downloadPdf(canvases);
+        toast(canvases.length > 1
+          ? canvases.length + "ページのPDFを保存しました（" + size + "）"
+          : "PDFを保存しました（" + size + "）");
       } else {
         await downloadCanvases(canvases);
         toast(canvases.length > 1
@@ -1530,12 +1628,10 @@
           : "保存しました（" + size + "）");
       }
     } catch (err) {
-      toast(err && err.message ? err.message : "画像にできませんでした");
+      toast(err && err.message ? err.message : "書き出せませんでした");
     } finally {
       exporting = false;
-      ["#downloadBtn", "#downloadBtnTop", "#copyBtn"].forEach((sel) => { $(sel).disabled = false; });
-      $("#downloadBtn").textContent = "画像をダウンロード";
-      $("#downloadBtnTop").textContent = "画像をダウンロード";
+      setExportBusy(false);
     }
   }
 
@@ -1989,6 +2085,8 @@
     $("#clearFieldsBtn").addEventListener("click", clearFields);
     $("#downloadBtn").addEventListener("click", () => exportImage("download"));
     $("#downloadBtnTop").addEventListener("click", () => exportImage("download"));
+    $("#pdfBtn").addEventListener("click", () => exportImage("pdf"));
+    $("#pdfBtnTop").addEventListener("click", () => exportImage("pdf"));
     $("#copyBtn").addEventListener("click", () => exportImage("copy"));
     $("#exportJsonBtn").addEventListener("click", downloadJson);
     $("#importJsonBtn").addEventListener("click", () => $("#jsonInput").click());
